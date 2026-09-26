@@ -388,4 +388,4 @@ The project was developed with assistance from Antigravity AI during the develop
 - **Mock API Latency**: The external mock API hosted on Render may take 15–20 seconds on initial spin-up from sleep. The application's loading state component actively informs the user during this period.
 
 ---
-**HAZHTeq Innovations NextStep Internship Challenge | Completed by Web Developer Candidate**
+**HAZHTeq Innovations NextStep Internship Challenge | Completed by Dhyani Dave**
