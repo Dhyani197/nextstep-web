@@ -55,7 +55,15 @@ namespace NextStepWeb.Services.Implementations
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Database connection could not be established during idempotency check.");
+                var sqlEx = ex as Microsoft.Data.SqlClient.SqlException ?? ex.InnerException as Microsoft.Data.SqlClient.SqlException;
+                string diag = sqlEx?.Number switch
+                {
+                    52 or 2 => "SQL Error 52/2: LocalDB runtime is not installed",
+                    26 => "SQL Error 26: LocalDB instance is stopped or not found",
+                    5120 or 5105 => $"SQL Error {sqlEx.Number}: MDF file attachment or permission failure",
+                    _ => ex.Message
+                };
+                _logger.LogWarning(ex, "Database connection could not be established during idempotency check: {Diagnostic}", diag);
             }
 
             if (existingSituation != null)
@@ -340,8 +348,26 @@ namespace NextStepWeb.Services.Implementations
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Database connection error while saving situation. Check SQL Server LocalDB status.");
-                return (null, "Database connection to SQL Server LocalDB is temporarily unavailable. Your situation has been preserved in your browser.", true);
+                var sqlEx = ex as Microsoft.Data.SqlClient.SqlException ?? ex.InnerException as Microsoft.Data.SqlClient.SqlException;
+                string diagnosticCategory = sqlEx?.Number switch
+                {
+                    52 or 2 => "SQL Error 52/2: Local Database Runtime is not installed on this machine.",
+                    26 => "SQL Error 26: SQL Server instance (localdb)\\MSSQLLocalDB is stopped or unreachable.",
+                    5120 or 5105 => $"SQL Error {sqlEx.Number}: Cannot attach physical MDF file (permission or path lock).",
+                    18456 => "SQL Error 18456: SQL Server authentication failure.",
+                    _ => $"SQL Exception (Code {sqlEx?.Number}): {ex.Message}"
+                };
+
+                _logger.LogError(ex, "Database connection error while saving situation. Diagnostic: {Diagnostic}. Exception: {Message}", diagnosticCategory, ex.Message);
+
+                string userMessage = sqlEx?.Number switch
+                {
+                    52 or 2 => "Database connection to SQL Server LocalDB is temporarily unavailable (Local Database Runtime is not installed on this machine). Your situation has been preserved in your browser.",
+                    26 => "Database connection to SQL Server LocalDB is temporarily unavailable (LocalDB instance is stopped). Your situation has been preserved in your browser.",
+                    _ => "Database connection to SQL Server LocalDB is temporarily unavailable. Your situation has been preserved in your browser."
+                };
+
+                return (null, userMessage, true);
             }
 
             var resultVm = await GetSituationViewModelAsync(situation.Id, 1, cancellationToken);
@@ -505,7 +531,24 @@ namespace NextStepWeb.Services.Implementations
                 TimestampUtc = DateTime.UtcNow
             });
 
-            await _dbContext.SaveChangesAsync(cancellationToken);
+            try
+            {
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                var sqlEx = ex as Microsoft.Data.SqlClient.SqlException ?? ex.InnerException as Microsoft.Data.SqlClient.SqlException;
+                string diagnosticCategory = sqlEx?.Number switch
+                {
+                    52 or 2 => "SQL Error 52/2: Local Database Runtime is not installed on this machine.",
+                    26 => "SQL Error 26: SQL Server instance (localdb)\\MSSQLLocalDB is stopped or unreachable.",
+                    5120 or 5105 => $"SQL Error {sqlEx.Number}: Cannot attach physical MDF file (permission or path lock).",
+                    _ => $"SQL Exception (Code {sqlEx?.Number}): {ex.Message}"
+                };
+
+                _logger.LogError(ex, "Failed to persist situation update to SQL Server LocalDB: {Diagnostic}", diagnosticCategory);
+                return (null, "Database connection to SQL Server LocalDB is temporarily unavailable. Your update could not be saved to disk.", false);
+            }
 
             var updatedVm = await GetSituationViewModelAsync(situation.Id, newVersionNumber, cancellationToken);
             return (updatedVm, null, false);
