@@ -1,0 +1,26 @@
+@model (string? ErrorMessage, bool CanRetry)
+
+@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+{
+    <div class="alert alert-error" role="alert" id="errorStateAlert">
+        <div style="display: flex; align-items: flex-start; gap: var(--space-3);">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; color: var(--color-error-text); margin-top: 2px;">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+            <div>
+                <strong style="display: block; margin-bottom: var(--space-1);">Action required</strong>
+                <span>@Model.ErrorMessage</span>
+                @if (Model.CanRetry)
+                {
+                    <div style="margin-top: var(--space-2);">
+                        <button type="submit" form="situationForm" class="btn btn-secondary" style="min-height: 36px; padding: var(--space-1) var(--space-3); font-size: var(--font-size-xs);" id="retryAnalysisBtn">
+                            Try analysis again
+                        </button>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}

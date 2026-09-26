@@ -1,0 +1,53 @@
+@model NextStepWeb.Models.ViewModels.IssueItemViewModel
+
+@{
+    string badgeClass = Model.PriorityLevel switch
+    {
+        "Critical" => "priority-critical",
+        "High" => "priority-high",
+        "Medium" => "priority-medium",
+        "EqualRanked" => "priority-tied",
+        _ => "priority-low"
+    };
+
+    string labelText = Model.IsTied 
+        ? "EQUAL PRIORITY" 
+        : $"{Model.PriorityLevel.ToUpperInvariant()} PRIORITY";
+}
+
+<article class="issue-card @(Model.IsPrimary ? "primary-issue-highlight" : "")" id="issueCard-@Model.Rank" aria-labelledby="issueTitle-@Model.Rank">
+    <div class="card-header-badge-row">
+        <span class="priority-badge @badgeClass" id="issueBadge-@Model.Rank">
+            @if (Model.IsTied)
+            {
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <line x1="5" y1="9" x2="19" y2="9"></line>
+                    <line x1="5" y1="15" x2="19" y2="15"></line>
+                </svg>
+            }
+            else if (Model.PriorityLevel == "Critical" || Model.PriorityLevel == "High")
+            {
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon>
+                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+            }
+            <span>@labelText</span>
+        </span>
+
+        <span class="rank-indicator" aria-label="Priority ranking position">
+            @(Model.IsTied ? "Tied Rank" : $"#{Model.Rank}")
+        </span>
+    </div>
+
+    <h3 id="issueTitle-@Model.Rank">@Model.Title</h3>
+    <p>@Model.Description</p>
+
+    @if (Model.IsTied)
+    {
+        <div class="alert alert-warning" style="margin-top: var(--space-2); margin-bottom: 0; padding: var(--space-2); font-size: var(--font-size-xs);" role="note">
+            <strong>Note:</strong> @(Model.TiedNote ?? "These priorities are currently equally important. You can clarify below if needed.")
+        </div>
+    }
+</article>

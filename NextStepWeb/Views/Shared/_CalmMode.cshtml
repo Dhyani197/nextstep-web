@@ -1,0 +1,70 @@
+@model NextStepWeb.Models.ViewModels.SituationResultViewModel
+
+<section class="calm-mode-container" id="calmModeContainer" aria-label="Support and guidance">
+    <div class="calm-badge">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z"></path>
+            <path d="M12 8v4"></path>
+            <path d="M12 16h.01"></path>
+        </svg>
+        <span>Support Mode Active</span>
+    </div>
+
+    <h2 class="calm-heading">Take a gentle breath. You don't have to sort everything out right now.</h2>
+
+    <div class="calm-message-card">
+        <p style="font-size: var(--font-size-lg); line-height: var(--line-height-relaxed); margin-bottom: 0;">
+            @(Model.SupportMessage ?? Model.Summary)
+        </p>
+    </div>
+
+    @if (Model.SupportResources != null && Model.SupportResources.Any())
+    {
+        <div style="margin-top: var(--space-4);">
+            <h3 style="font-size: var(--font-size-base); color: var(--color-calm-accent); margin-bottom: var(--space-2);">
+                Free, Confidential Immediate Support:
+            </h3>
+
+            @foreach (var res in Model.SupportResources)
+            {
+                <div class="calm-resource-card">
+                    <h4>@res.Name</h4>
+                    <p style="margin-bottom: var(--space-2); font-size: var(--font-size-sm); color: var(--color-text-secondary);">
+                        Available: <strong>@res.Hours</strong>
+                    </p>
+                    <a href="tel:@res.Contact" class="calm-hotline-btn" id="callHotlineBtn-@res.Contact" aria-label="Call @res.Name at @res.Contact">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+                        </svg>
+                        <span>Call @res.Contact</span>
+                    </a>
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <!-- Default verified national mental health resources -->
+        <div class="calm-resource-card">
+            <h4>Tele-MANAS (Govt. of India mental health helpline)</h4>
+            <p style="margin-bottom: var(--space-2); font-size: var(--font-size-sm);">
+                Toll-free, 24x7 confidential emotional support &amp; counselling.
+            </p>
+            <a href="tel:14416" class="calm-hotline-btn" id="callTeleManasBtn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+                </svg>
+                <span>Call 14416 (or 1800-891-4416)</span>
+            </a>
+        </div>
+    }
+
+    <div class="calm-single-step" id="calmSingleStep">
+        <h4 style="font-size: var(--font-size-base); color: var(--color-calm-accent); margin-bottom: var(--space-1);">
+            One manageable step for right now:
+        </h4>
+        <p style="font-size: var(--font-size-base); margin-bottom: 0;">
+            @(Model.SupportOfferToContinue ?? "Pause for ten minutes, have a glass of water, and remember that things don't need to be solved all at once. When you feel ready, you can come back.")
+        </p>
+    </div>
+</section>

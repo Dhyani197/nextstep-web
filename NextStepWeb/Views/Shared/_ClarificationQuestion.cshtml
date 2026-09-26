@@ -1,0 +1,43 @@
+@model (NextStepWeb.Models.ViewModels.ClarificationQuestionViewModel Question, int Index)
+
+<div class="question-item" id="clarificationQuestion-@Model.Index">
+    <label class="question-text" for="qAnswer_@Model.Index">
+        @Model.Question.QuestionText
+    </label>
+
+    @if (Model.Question.Options != null && Model.Question.Options.Any())
+    {
+        <div class="question-options" role="radiogroup" aria-label="@Model.Question.QuestionText">
+            @for (int i = 0; i < Model.Question.Options.Count; i++)
+            {
+                var opt = Model.Question.Options[i];
+                string radioId = $"opt_{Model.Index}_{i}";
+                <label class="radio-label" for="@radioId">
+                    <input type="radio" 
+                           id="@radioId" 
+                           name="Answers[@Model.Question.Id]" 
+                           value="@opt" />
+                    <span>@opt</span>
+                </label>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="form-group" style="margin-bottom: var(--space-2);">
+            <input type="text" 
+                   class="situation-textarea" 
+                   style="min-height: 44px; height: 44px; padding: var(--space-2);"
+                   id="qAnswer_@Model.Index" 
+                   name="Answers[@Model.Question.Id]" 
+                   placeholder="Type your clarification or leave blank to skip..." />
+        </div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(Model.Question.Purpose) && !Model.Question.Purpose.StartsWith("Options: "))
+    {
+        <div class="form-hint" style="margin-top: var(--space-1);">
+            <small>Why we ask: @Model.Question.Purpose</small>
+        </div>
+    }
+</div>

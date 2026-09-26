@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - NextStep</title>
+    <meta name="description" content="NextStep helps turn messy real-life situations into prioritized clarity, actionable steps, and peace of mind within 30 seconds." />
+    
+    <link rel="stylesheet" href="~/css/tokens.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+</head>
+<body>
+    <!-- Accessibility Live Region for Screen Readers -->
+    <div id="a11yLiveRegion" class="sr-only" style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border-width: 0;" aria-live="polite" role="status"></div>
+
+    <header class="app-header" role="banner">
+        <div class="header-container">
+            <a asp-controller="Situation" asp-action="Index" class="brand-link" id="brandHomeLink" aria-label="NextStep Home">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color: var(--color-brand-600);">
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                </svg>
+                <span>NextStep</span>
+                <span class="brand-badge">Clarity</span>
+            </a>
+
+            <nav aria-label="Quick Actions">
+                <a asp-controller="Situation" asp-action="Index" class="btn btn-secondary" style="min-height: 38px; padding: var(--space-1) var(--space-3); font-size: var(--space-3);" id="newSituationNavBtn">
+                    + New Situation
+                </a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="main-content" role="main" id="mainContent">
+        @RenderBody()
+    </main>
+
+    <footer class="app-footer" role="contentinfo">
+        <p>NextStepWeb &bull; HAZHTeq Innovations Technical Challenge &bull; Built with ASP.NET Core &amp; SQL Server</p>
+    </footer>
+
+    <script src="~/js/site.js" asp-append-version="true"></script>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

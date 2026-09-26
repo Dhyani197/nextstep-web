@@ -1,0 +1,28 @@
+@model NextStepWeb.Models.ViewModels.SituationResultViewModel
+
+<section class="situation-summary-box" aria-labelledby="summaryHeading">
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-2); flex-wrap: wrap; gap: var(--space-2);">
+        <h2 id="summaryHeading" style="font-size: var(--font-size-base); color: var(--color-brand-700); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0;">
+            Understanding Your Situation
+        </h2>
+
+        @if (!string.IsNullOrWhiteSpace(Model.ConfidenceLevel))
+        {
+            <span style="font-size: var(--font-size-xs); color: var(--color-text-muted); background: var(--color-surface-subtle); padding: 2px 8px; border-radius: var(--radius-full);">
+                Confidence: <strong>@Model.ConfidenceLevel</strong>
+            </span>
+        }
+    </div>
+
+    <p id="situationSummaryParagraph">@Model.Summary</p>
+
+    @if (Model.ConfidenceReasons != null && Model.ConfidenceReasons.Any())
+    {
+        <ul style="margin-top: var(--space-2); margin-bottom: 0; padding-left: var(--space-4); font-size: var(--font-size-xs); color: var(--color-text-muted);">
+            @foreach (var reason in Model.ConfidenceReasons)
+            {
+                <li>@reason</li>
+            }
+        </ul>
+    }
+</section>

@@ -1,0 +1,347 @@
+@model NextStepWeb.Models.ViewModels.SituationResultViewModel
+@{
+    ViewData["Title"] = $"Situation Assessment (v{Model.VersionNumber})";
+}
+
+<!-- Hidden metadata for Two-Tab synchronization -->
+<div id="situationMetadata" 
+     data-situation-id="@Model.SituationId" 
+     data-version="@Model.VersionNumber" 
+     aria-hidden="true" 
+     style="display: none;"></div>
+
+<!-- Two-Tab Conflict Detection Banner (Requirement 14) -->
+<div class="two-tab-stale-banner" id="twoTabStaleBanner" role="alert" aria-live="assertive">
+    <div style="display: flex; align-items: center; gap: var(--space-2);">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+        </svg>
+        <strong>This situation was updated in another tab.</strong>
+    </div>
+    <a asp-action="Details" asp-route-id="@Model.SituationId" class="btn btn-secondary" style="min-height: 36px; padding: var(--space-1) var(--space-3); font-size: var(--font-size-xs);" id="refreshStaleTabBtn">
+        Refresh to view latest
+    </a>
+</div>
+
+@if (TempData["StaleMessage"] != null)
+{
+    <div class="alert alert-warning" role="status">
+        @TempData["StaleMessage"]
+    </div>
+}
+
+@if (TempData["ErrorMessage"] != null)
+{
+    <div class="alert alert-error" role="alert">
+        @TempData["ErrorMessage"]
+    </div>
+}
+
+<!-- Situation Header & Version Timeline (Requirement 13) -->
+<div class="result-header">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-2);">
+        <div>
+            <h1 id="detailsPageTitle" style="margin-bottom: var(--space-1);">Situation Assessment</h1>
+            <span style="font-size: var(--font-size-xs); color: var(--color-text-muted);">
+                Situation ID: <code>@Model.SituationId.ToString().Substring(0, 8)...</code> &bull; Created @Model.CreatedAtUtc.ToLocalTime().ToString("g")
+            </span>
+        </div>
+
+        <!-- Authoritative Version Timeline -->
+        @if (Model.VersionHistory.Count > 1)
+        {
+            <nav class="version-timeline-bar" aria-label="Version history">
+                <span style="font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); color: var(--color-text-muted); margin-right: var(--space-1);">Versions:</span>
+                @foreach (var v in Model.VersionHistory)
+                {
+                    <a asp-action="Details" asp-route-id="@Model.SituationId" asp-route-v="@v.VersionNumber"
+                       class="version-pill @(v.IsCurrent ? "active" : "")"
+                       id="versionLink-@v.VersionNumber"
+                       aria-current="@(v.IsCurrent ? "page" : "false")"
+                       title="@(v.ChangeSummary ?? $"Version {v.VersionNumber}")">
+                        v@(v.VersionNumber) @(v.VersionNumber == Model.LatestVersionNumber ? "(Latest)" : "")
+                    </a>
+                }
+            </nav>
+        }
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(Model.ChangeSummary))
+    {
+        <div style="font-size: var(--font-size-xs); color: var(--color-brand-700); background-color: var(--color-brand-50); padding: var(--space-1) var(--space-3); border-radius: var(--radius-sm); margin-bottom: var(--space-3);">
+            <strong>What changed:</strong> @Model.ChangeSummary
+        </div>
+    }
+</div>
+
+<!-- Adversarial / Prompt Injection Alert (Requirement 10) -->
+@if (Model.IsAdversarial)
+{
+    <section class="adversarial-alert-banner" role="alert" id="adversarialAlertBanner">
+        <div class="alert-icon" aria-hidden="true">&#9888;</div>
+        <div>
+            <strong style="color: #92400e; display: block; margin-bottom: var(--space-1);">Security Guardrail Active: User Content Notice</strong>
+            <p style="font-size: var(--font-size-sm); color: #78350f; margin-bottom: 0;">
+                @(Model.AdversarialWarning ?? "Instructions contained inside pasted content are strictly treated as user-submitted text, not system instructions. NextStep will never ask for your UPI PIN, passwords, OTP, or banking credentials.")
+            </p>
+        </div>
+    </section>
+}
+
+<!-- Misuse / Out-of-Scope Redirect Card (Requirement 9) -->
+@if (Model.IsMisuse)
+{
+    <section class="misuse-redirect-card" id="misuseRedirectCard">
+        <div style="display: flex; gap: var(--space-2); align-items: center; margin-bottom: var(--space-2);">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color: var(--color-brand-600);">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="16" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+            </svg>
+            <h2 style="font-size: var(--font-size-base); color: #1e40af; margin-bottom: 0;">Out of Scope Request</h2>
+        </div>
+        <p style="font-size: var(--font-size-sm); color: #1e3a8a; margin-bottom: var(--space-3);">
+            @(Model.MisuseExplanation ?? "NextStep is designed to help you prioritize messy real-life situations and decide what to do next. It cannot generate general-purpose essays or write coursework for you.")
+        </p>
+        <p style="font-size: var(--font-size-xs); color: #3b82f6; margin-bottom: 0;">
+            If this assignment is part of a stressful evening or deadline conflict, describe your competing priorities and NextStep will help you structure your evening.
+        </p>
+    </section>
+}
+
+<!-- Worse-After-Action Recovery Card (Requirement 11) -->
+@if (Model.IsWorseAfterAction)
+{
+    <section class="worse-after-action-card" id="worseAfterActionCard" aria-labelledby="worseAfterActionHeading">
+        <h2 id="worseAfterActionHeading" style="font-size: var(--font-size-base); color: #9a3412; margin-bottom: var(--space-1);">
+            Situation Recovery &amp; Reassessment
+        </h2>
+        <p style="font-size: var(--font-size-sm); color: #c2410c; margin-bottom: var(--space-3);">
+            @(Model.WorseOutcomeAnalysis ?? "When previous action results in unexpected escalation, pause and reset. The immediate focus is de-escalation rather than escalating the dispute.")
+        </p>
+
+        <div class="recovery-grid">
+            <div class="recovery-item">
+                <span class="recovery-item-title">What Changed</span>
+                <p style="font-size: var(--font-size-sm); margin-bottom: 0;">@(Model.WhatChanged ?? "A previous message produced an unintended reaction and third parties were notified.")</p>
+            </div>
+            <div class="recovery-item">
+                <span class="recovery-item-title">What Happened After Action</span>
+                <p style="font-size: var(--font-size-sm); margin-bottom: 0;">@(Model.WhatHappenedAfterAction ?? "Interpersonal friction increased and the formal stakes shifted.")</p>
+            </div>
+            <div class="recovery-item">
+                <span class="recovery-item-title">Different Information</span>
+                <p style="font-size: var(--font-size-sm); margin-bottom: 0;">@(Model.DifferentInformation ?? "Written email replies now carry heightened risk. Immediate reply is counter-productive.")</p>
+            </div>
+            <div class="recovery-item">
+                <span class="recovery-item-title">What To Reassess</span>
+                <p style="font-size: var(--font-size-sm); margin-bottom: 0;">@(Model.WhatToReassess ?? "Switch to a calmer channel (short verbal call) after a cooling-off period.")</p>
+            </div>
+        </div>
+    </section>
+}
+
+@if (Model.IsCalmMode)
+{
+    <!-- CALM MODE / AT-RISK SCENARIO (Requirement 8) -->
+    <!-- Replaces normal priority cards completely -->
+    @await Html.PartialAsync("_CalmMode", Model)
+}
+else
+{
+    <!-- Normal Situation Summary (Requirement 19) -->
+    @await Html.PartialAsync("_SituationSummary", Model)
+
+    <!-- INFORMATION HIERARCHY (Requirement 5 & 6) -->
+    <!-- Primary Issue and Recommended Next Action appear Above The Fold on 360px screen -->
+    <div class="above-fold-hero" id="aboveFoldHero">
+        @if (Model.PrimaryIssue != null)
+        {
+            <div class="primary-issue-container">
+                <div style="font-size: var(--font-size-xs); font-weight: var(--font-weight-bold); text-transform: uppercase; color: var(--color-brand-700); margin-bottom: var(--space-1); letter-spacing: 0.05em;">
+                    Primary Issue (Top Priority)
+                </div>
+                @await Html.PartialAsync("_PriorityCard", Model.PrimaryIssue)
+            </div>
+        }
+
+        @if (Model.RecommendedNextAction != null)
+        {
+            <div class="recommended-next-action-container">
+                <div style="font-size: var(--font-size-xs); font-weight: var(--font-weight-bold); text-transform: uppercase; color: var(--color-brand-700); margin-bottom: var(--space-1); letter-spacing: 0.05em;">
+                    Recommended Next Action (Do This First)
+                </div>
+                <article class="recommended-next-action-card" id="recommendedNextActionCard">
+                    <div class="card-header-badge-row">
+                        <span class="priority-badge" style="background-color: var(--color-brand-100); color: var(--color-brand-700); border: 1px solid var(--color-brand-500);">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <polyline points="12 6 12 12 16 14"></polyline>
+                            </svg>
+                            <span>Immediate Action</span>
+                        </span>
+                        @if (!string.IsNullOrWhiteSpace(Model.RecommendedNextAction.EstimatedTime))
+                        {
+                            <span class="rank-indicator">
+                                Time: @Model.RecommendedNextAction.EstimatedTime
+                            </span>
+                        }
+                    </div>
+
+                    <h3 style="color: var(--color-brand-900); font-size: var(--font-size-lg); margin-bottom: var(--space-2);" id="nextActionTitle">
+                        @Model.RecommendedNextAction.Title
+                    </h3>
+                    <p style="font-size: var(--font-size-base); color: var(--color-text-secondary); margin-bottom: 0;">
+                        @Model.RecommendedNextAction.Description
+                    </p>
+                </article>
+            </div>
+        }
+    </div>
+
+    <!-- SECONDARY ISSUES (Requirement 5) -->
+    @if (Model.SecondaryIssues.Any())
+    {
+        <section aria-labelledby="secondaryIssuesHeading">
+            <h2 class="section-title" id="secondaryIssuesHeading">
+                <span>Other Important Issues</span>
+                <span style="font-size: var(--font-size-xs); font-weight: var(--font-weight-regular); color: var(--color-text-muted);">
+                    (@Model.SecondaryIssues.Count)
+                </span>
+            </h2>
+
+            <div class="secondary-issues-grid">
+                @foreach (var issue in Model.SecondaryIssues)
+                {
+                    @await Html.PartialAsync("_PriorityCard", issue)
+                }
+            </div>
+        </section>
+    }
+
+    <!-- COLLAPSED ISSUES (Progressive Disclosure - Requirement 5) -->
+    @if (Model.CollapsedIssues.Any())
+    {
+        <details class="collapsed-issues-details" id="collapsedIssuesDetails">
+            <summary class="collapsed-issues-summary" id="collapsedIssuesSummary">
+                <span>View Remaining Lower-Priority Issues (@Model.CollapsedIssues.Count)</span>
+            </summary>
+            <div style="display: grid; gap: var(--space-3); margin-top: var(--space-3);">
+                @foreach (var issue in Model.CollapsedIssues)
+                {
+                    @await Html.PartialAsync("_PriorityCard", issue)
+                }
+            </div>
+        </details>
+    }
+
+    <!-- Other Action Items -->
+    @if (Model.OtherActions.Any())
+    {
+        <section style="margin-bottom: var(--space-6);" aria-labelledby="followUpHeading">
+            <h2 class="section-title" id="followUpHeading">Follow-up Steps</h2>
+            <ol style="display: grid; gap: var(--space-2); padding-left: var(--space-5);">
+                @foreach (var action in Model.OtherActions)
+                {
+                    <li style="padding-left: var(--space-2); color: var(--color-text-secondary);" id="actionStep-@action.StepOrder">
+                        <strong>@action.Title</strong> &mdash; <span>@action.Description</span>
+                        @if (!string.IsNullOrEmpty(action.EstimatedTime))
+                        {
+                            <span style="font-size: var(--font-size-xs); color: var(--color-text-muted);">(@action.EstimatedTime)</span>
+                        }
+                    </li>
+                }
+            </ol>
+        </section>
+    }
+}
+
+<!-- CLARIFICATION QUESTIONS (Requirement 7) -->
+@if (Model.ClarificationQuestions != null && Model.ClarificationQuestions.Any())
+{
+    <section class="clarification-section" aria-labelledby="clarificationHeading">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-2); flex-wrap: wrap;">
+            <h2 id="clarificationHeading" style="font-size: var(--font-size-lg); margin-bottom: 0;">
+                Clarification Questions
+            </h2>
+            <span style="font-size: var(--font-size-xs); color: var(--color-text-muted);">
+                Settling these will refine priorities
+            </span>
+        </div>
+        <p style="font-size: var(--font-size-sm); color: var(--color-text-secondary); margin-bottom: var(--space-3);">
+            Answer what you can, or skip questions that don't apply. NextStep will generate a refined Version @(Model.VersionNumber + 1).
+        </p>
+
+        <form asp-controller="Situation" asp-action="Update" method="post" id="clarificationForm">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="SituationId" value="@Model.SituationId" />
+            <input type="hidden" name="ExpectedVersion" value="@Model.VersionNumber" />
+
+            @for (int i = 0; i < Model.ClarificationQuestions.Count; i++)
+            {
+                var q = Model.ClarificationQuestions[i];
+                @await Html.PartialAsync("_ClarificationQuestion", (q, i))
+            }
+
+            <div class="form-group" style="margin-top: var(--space-4);">
+                <label for="updateText" class="form-label" style="font-size: var(--font-size-sm);">
+                    Any other new updates or changed details? (Optional)
+                </label>
+                <input type="text" 
+                       name="UpdateText" 
+                       id="updateText" 
+                       class="situation-textarea" 
+                       style="min-height: 48px; height: 48px; padding: var(--space-2);"
+                       placeholder="e.g. Professor just replied, deadline moved to Thursday..." />
+            </div>
+
+            <div style="display: flex; gap: var(--space-2); margin-top: var(--space-4); flex-wrap: wrap;">
+                <button type="submit" class="btn btn-primary" id="submitClarificationBtn">
+                    Update Situation &amp; Re-Prioritize
+                </button>
+                <a asp-action="Index" class="btn btn-secondary" id="startNewSituationBtn">
+                    Start a New Situation
+                </a>
+            </div>
+        </form>
+    </section>
+}
+else
+{
+    <!-- Form to add situation updates even if no questions were generated -->
+    <section class="clarification-section" aria-labelledby="addUpdateHeading">
+        <h2 id="addUpdateHeading" style="font-size: var(--font-size-lg); margin-bottom: var(--space-1);">
+            Add a Situation Update
+        </h2>
+        <p style="font-size: var(--font-size-sm); color: var(--color-text-secondary); margin-bottom: var(--space-3);">
+            Did something happen after you acted? Describe what changed and NextStep will reassess.
+        </p>
+
+        <form asp-controller="Situation" asp-action="Update" method="post" id="updateOnlyForm">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="SituationId" value="@Model.SituationId" />
+            <input type="hidden" name="ExpectedVersion" value="@Model.VersionNumber" />
+
+            <div class="form-group">
+                <input type="text" 
+                       name="UpdateText" 
+                       id="updateTextInputOnly" 
+                       class="situation-textarea" 
+                       style="min-height: 48px; height: 48px; padding: var(--space-2);"
+                       required
+                       placeholder="e.g. I spoke to my partner, or I emailed my guide..." />
+            </div>
+
+            <div style="display: flex; gap: var(--space-2); margin-top: var(--space-3); flex-wrap: wrap;">
+                <button type="submit" class="btn btn-primary" id="submitUpdateOnlyBtn">
+                    Update Situation
+                </button>
+                <a asp-action="Index" class="btn btn-secondary">
+                    Start New Situation
+                </a>
+            </div>
+        </form>
+    </section>
+}
