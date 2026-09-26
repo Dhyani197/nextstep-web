@@ -1,9 +1,23 @@
 @model (NextStepWeb.Models.ViewModels.ClarificationQuestionViewModel Question, int Index)
 
 <div class="question-item" id="clarificationQuestion-@Model.Index">
-    <label class="question-text" for="qAnswer_@Model.Index">
-        @Model.Question.QuestionText
-    </label>
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-1); flex-wrap: wrap; gap: var(--space-1);">
+        <label class="question-text" for="qAnswer_@Model.Index" style="margin-bottom: 0;">
+            @Model.Question.QuestionText
+        </label>
+        @if (Model.Question.Skippable)
+        {
+            <span class="badge" style="font-size: var(--font-size-xs); color: var(--color-text-muted); background-color: var(--color-surface-subtle); border: 1px solid var(--color-border); padding: 2px 8px; border-radius: var(--radius-full);" id="questionBadge-@Model.Index">
+                Optional &bull; Skippable
+            </span>
+        }
+        else
+        {
+            <span class="badge" style="font-size: var(--font-size-xs); color: var(--color-required-text); background-color: var(--color-required-bg); border: 1px solid var(--color-required-border); padding: 2px 8px; border-radius: var(--radius-full); font-weight: var(--font-weight-semibold);" id="questionBadge-@Model.Index">
+                Required
+            </span>
+        }
+    </div>
 
     @if (Model.Question.Options != null && Model.Question.Options.Any())
     {
@@ -16,8 +30,20 @@
                     <input type="radio" 
                            id="@radioId" 
                            name="Answers[@Model.Question.Id]" 
-                           value="@opt" />
+                           value="@opt" 
+                           @(Model.Question.Skippable ? "" : (i == 0 ? "required" : "")) />
                     <span>@opt</span>
+                </label>
+            }
+            @if (Model.Question.Skippable)
+            {
+                string skipRadioId = $"opt_{Model.Index}_skip";
+                <label class="radio-label" for="@skipRadioId" style="color: var(--color-text-muted); font-style: italic;">
+                    <input type="radio" 
+                           id="@skipRadioId" 
+                           name="Answers[@Model.Question.Id]" 
+                           value="Skipped" />
+                    <span>Skip this question</span>
                 </label>
             }
         </div>
@@ -30,11 +56,12 @@
                    style="min-height: 44px; height: 44px; padding: var(--space-2);"
                    id="qAnswer_@Model.Index" 
                    name="Answers[@Model.Question.Id]" 
-                   placeholder="Type your clarification or leave blank to skip..." />
+                   placeholder="@(Model.Question.Skippable ? "Type your clarification (Optional)..." : "Type your clarification (Required to resolve uncertainty)...")"
+                   @(Model.Question.Skippable ? "" : "required") />
         </div>
     }
 
-    @if (!string.IsNullOrWhiteSpace(Model.Question.Purpose) && !Model.Question.Purpose.StartsWith("Options: "))
+    @if (!string.IsNullOrWhiteSpace(Model.Question.Purpose))
     {
         <div class="form-hint" style="margin-top: var(--space-1);">
             <small>Why we ask: @Model.Question.Purpose</small>

@@ -34,6 +34,7 @@ builder.Services.AddDbContext<NextStepDbContext>(options =>
     options.UseSqlServer(connectionString, sqlOptions =>
     {
         sqlOptions.EnableRetryOnFailure(maxRetryCount: 3, maxRetryDelay: TimeSpan.FromSeconds(2), errorNumbersToAdd: null);
+        sqlOptions.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery);
     });
 });
 

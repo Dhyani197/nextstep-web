@@ -29,11 +29,19 @@ namespace NextStepWeb.Services.Implementations
             this._logger = _logger;
 
             var baseUrl = configuration["NextStepApi:BaseUrl"] ?? "https://nextstepmockapi.onrender.com";
-            _candidateId = configuration["NextStepApi:CandidateId"] ?? "candidate@hazhteq.com";
+            _candidateId = configuration["NextStepApi:CandidateId"]?.Trim()
+                ?? configuration["NextStepApi:CandidateEmail"]?.Trim()
+                ?? "REPLACE_WITH_YOUR_SUBMISSION_EMAIL";
+
+            if (string.IsNullOrWhiteSpace(_candidateId) || _candidateId == "REPLACE_WITH_YOUR_SUBMISSION_EMAIL")
+            {
+                _logger.LogWarning("NextStepApi:CandidateId is not set. Please provide your actual submission email in appsettings.json under 'NextStepApi:CandidateId'.");
+            }
 
             _httpClient.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
             _httpClient.DefaultRequestHeaders.Accept.Clear();
             _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            _httpClient.DefaultRequestHeaders.Remove("X-Candidate-Id");
             _httpClient.DefaultRequestHeaders.Add("X-Candidate-Id", _candidateId);
 
             int timeoutSec = int.TryParse(configuration["NextStepApi:TimeoutSeconds"], out var t) ? t : 25;
@@ -67,6 +75,7 @@ namespace NextStepWeb.Services.Implementations
                     {
                         Content = content
                     };
+                    requestMessage.Headers.TryAddWithoutValidation("X-Candidate-Id", _candidateId);
 
                     using var response = await _httpClient.SendAsync(requestMessage, cancellationToken);
 
@@ -183,7 +192,9 @@ namespace NextStepWeb.Services.Implementations
 
             try
             {
-                using var response = await _httpClient.GetAsync($"v1/situations/{situationId}", cancellationToken);
+                using var request = new HttpRequestMessage(HttpMethod.Get, $"v1/situations/{situationId}");
+                request.Headers.TryAddWithoutValidation("X-Candidate-Id", _candidateId);
+                using var response = await _httpClient.SendAsync(request, cancellationToken);
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.LogWarning("GET /v1/situations/{Id} returned {StatusCode}", situationId, response.StatusCode);

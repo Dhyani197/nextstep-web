@@ -3,11 +3,13 @@
 
 document.addEventListener('DOMContentLoaded', () => {
   initSituationInputForm();
+  initSituationDetailsView();
   initTwoTabSync();
 });
 
 /**
  * Handles Situation Input Screen, Local Draft Persistence, and Loading States
+ * Addresses Requirement 6 (1s, 5s, 15s meaningful progress) & Requirement 10 (Refresh / Back recovery)
  */
 function initSituationInputForm() {
   const form = document.getElementById('situationForm');
@@ -16,21 +18,31 @@ function initSituationInputForm() {
   const loadingContainer = document.getElementById('loadingExperience');
   const loadingMessage = document.getElementById('loadingMessageText');
   const loadingTimer = document.getElementById('loadingTimerSeconds');
-  const liveRegion = document.getElementById('a11yLiveRegion');
+  const draftBanner = document.getElementById('draftRestoredBanner');
 
   if (!form || !textarea) return;
 
   const DRAFT_KEY = 'nextstep_situation_draft';
+  const PENDING_KEY = 'nextstep_pending_submit';
 
-  // Restore draft if textarea is empty and not pre-seeded with a scenario
-  if (!textarea.value.trim()) {
-    const savedDraft = localStorage.getItem(DRAFT_KEY);
-    if (savedDraft) {
-      textarea.value = savedDraft;
-    }
+  // Restore draft if textarea is empty or upon browser refresh/back navigation
+  const savedDraft = localStorage.getItem(DRAFT_KEY);
+  const hadPendingSubmit = sessionStorage.getItem(PENDING_KEY);
+
+  if (!textarea.value.trim() && savedDraft) {
+    textarea.value = savedDraft;
   }
 
-  // Preserve text on every input
+  // If a submission was in flight when the user refreshed or navigated back
+  if (hadPendingSubmit && savedDraft) {
+    sessionStorage.removeItem(PENDING_KEY);
+    if (draftBanner) {
+      draftBanner.style.display = 'block';
+    }
+    announceToScreenReader('Your entered situation was preserved. You can review and continue.');
+  }
+
+  // Continuously preserve text on every keystroke
   textarea.addEventListener('input', () => {
     localStorage.setItem(DRAFT_KEY, textarea.value);
   });
@@ -38,7 +50,7 @@ function initSituationInputForm() {
   // Scenario buttons auto-populate textarea and draft
   const scenarioButtons = document.querySelectorAll('.scenario-btn');
   scenarioButtons.forEach(btn => {
-    btn.addEventListener('click', (e) => {
+    btn.addEventListener('click', () => {
       const text = btn.getAttribute('data-text');
       if (text) {
         textarea.value = text;
@@ -49,11 +61,27 @@ function initSituationInputForm() {
     });
   });
 
-  // Handle Form Submit and Meaningful Loading Experience
+  // Ensure retry button generates fresh ClientRequestId for retry submissions
+  const retryBtn = document.getElementById('retryAnalysisBtn');
+  if (retryBtn) {
+    retryBtn.addEventListener('click', () => {
+      const clientRequestIdInput = document.getElementById('ClientRequestId');
+      if (clientRequestIdInput) {
+        clientRequestIdInput.value = 'retry_' + Date.now() + '_' + Math.random().toString(36).substring(2, 10);
+      }
+    });
+  }
+
+  // Handle Form Submit and Progressive Loading Experience
   form.addEventListener('submit', (e) => {
     if (!textarea.value.trim()) {
-      return; // let native/HTML5 validation catch it
+      return; // let native validation catch it
     }
+
+    // Preserve situation in localStorage during in-flight request
+    // DO NOT remove draft here - ensures refresh/back during 15s AI wait retains user text!
+    localStorage.setItem(DRAFT_KEY, textarea.value);
+    sessionStorage.setItem(PENDING_KEY, 'true');
 
     // Disable button to prevent double-submit
     if (submitBtn) {
@@ -61,16 +89,13 @@ function initSituationInputForm() {
       submitBtn.setAttribute('aria-busy', 'true');
     }
 
-    // Clear draft storage now that it's submitted
-    localStorage.removeItem(DRAFT_KEY);
-
     // Show loading state with progressive disclosure
     if (loadingContainer) {
       loadingContainer.classList.add('active');
       loadingContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
-    announceToScreenReader('Understanding your situation. Please wait.');
+    announceToScreenReader('Situation submitted. Reviewing details...');
 
     let seconds = 0;
     const timerInterval = setInterval(() => {
@@ -79,13 +104,16 @@ function initSituationInputForm() {
         loadingTimer.textContent = `${seconds}s elapsed`;
       }
 
+      // Requirement 6: Meaningful state changes at approximately 1s, 5s, 15s without fake internal AI reasoning
       if (seconds === 1) {
-        updateLoadingText("Understanding your situation...");
+        updateLoadingText("Situation received. Reviewing details...");
       } else if (seconds === 5) {
-        updateLoadingText("Still working through the details...");
+        updateLoadingText("Finding what matters...");
+      } else if (seconds === 10) {
+        updateLoadingText("Structuring priorities and recommended actions...");
       } else if (seconds === 15) {
-        updateLoadingText("This is taking longer than expected. Your situation has been saved.");
-        announceToScreenReader("This is taking longer than expected. Your situation has been saved.");
+        updateLoadingText("Taking longer than usual. Your situation is safely stored; finalizing response...");
+        announceToScreenReader("Taking longer than usual. Your situation is safely stored; finalizing response.");
       }
     }, 1000);
   });
@@ -98,7 +126,25 @@ function initSituationInputForm() {
 }
 
 /**
+ * Handles Situation Details View, Cleans Drafts, and Manages Accessibility
+ */
+function initSituationDetailsView() {
+  const situationMeta = document.getElementById('situationMetadata');
+  if (!situationMeta) return;
+
+  // Once details view is loaded successfully, clear input draft
+  const DRAFT_KEY = 'nextstep_situation_draft';
+  const PENDING_KEY = 'nextstep_pending_submit';
+  localStorage.removeItem(DRAFT_KEY);
+  sessionStorage.removeItem(PENDING_KEY);
+
+  // Announce assessment readiness for screen readers
+  announceToScreenReader('Situation assessment ready.');
+}
+
+/**
  * Two-Tab Conflict Detection (Lightweight Polling + Visibility Change)
+ * Addresses Requirement 11
  */
 function initTwoTabSync() {
   const staleBanner = document.getElementById('twoTabStaleBanner');
@@ -127,8 +173,8 @@ function initTwoTabSync() {
     }
   }
 
-  // Poll every 6 seconds
-  const interval = setInterval(checkStaleStatus, 6000);
+  // Poll every 5 seconds
+  const interval = setInterval(checkStaleStatus, 5000);
 
   // Also check immediately when tab gains focus
   document.addEventListener('visibilitychange', () => {
@@ -139,7 +185,8 @@ function initTwoTabSync() {
 }
 
 /**
- * Screen Reader Live Region Announcement
+ * Screen Reader Live Region Announcement (Requirement 8)
+ * Clean single announcement without token-level noise or duplicate regions
  */
 function announceToScreenReader(message) {
   const liveRegion = document.getElementById('a11yLiveRegion');

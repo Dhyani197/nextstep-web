@@ -15,9 +15,9 @@
         : $"{Model.PriorityLevel.ToUpperInvariant()} PRIORITY";
 }
 
-<article class="issue-card @(Model.IsPrimary ? "primary-issue-highlight" : "")" id="issueCard-@Model.Rank" aria-labelledby="issueTitle-@Model.Rank">
+<article class="issue-card @(Model.IsPrimary ? "primary-issue-highlight" : "")" id="issueCard-@Model.Id" aria-labelledby="issueTitle-@Model.Id">
     <div class="card-header-badge-row">
-        <span class="priority-badge @badgeClass" id="issueBadge-@Model.Rank">
+        <span class="priority-badge @badgeClass" id="issueBadge-@Model.Id">
             @if (Model.IsTied)
             {
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -41,7 +41,7 @@
         </span>
     </div>
 
-    <h3 id="issueTitle-@Model.Rank">@Model.Title</h3>
+    <h3 id="issueTitle-@Model.Id">@Model.Title</h3>
     <p>@Model.Description</p>
 
     @if (Model.IsTied)

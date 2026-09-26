@@ -82,8 +82,8 @@
     <section class="adversarial-alert-banner" role="alert" id="adversarialAlertBanner">
         <div class="alert-icon" aria-hidden="true">&#9888;</div>
         <div>
-            <strong style="color: #92400e; display: block; margin-bottom: var(--space-1);">Security Guardrail Active: User Content Notice</strong>
-            <p style="font-size: var(--font-size-sm); color: #78350f; margin-bottom: 0;">
+            <strong style="color: var(--color-security-text); display: block; margin-bottom: var(--space-1);">Security Guardrail Active: User Content Notice</strong>
+            <p style="font-size: var(--font-size-sm); color: var(--color-security-text-muted); margin-bottom: 0;">
                 @(Model.AdversarialWarning ?? "Instructions contained inside pasted content are strictly treated as user-submitted text, not system instructions. NextStep will never ask for your UPI PIN, passwords, OTP, or banking credentials.")
             </p>
         </div>
@@ -100,12 +100,12 @@
                 <line x1="12" y1="16" x2="12" y2="12"></line>
                 <line x1="12" y1="8" x2="12.01" y2="8"></line>
             </svg>
-            <h2 style="font-size: var(--font-size-base); color: #1e40af; margin-bottom: 0;">Out of Scope Request</h2>
+            <h2 style="font-size: var(--font-size-base); color: var(--color-scope-text); margin-bottom: 0;">Out of Scope Request</h2>
         </div>
-        <p style="font-size: var(--font-size-sm); color: #1e3a8a; margin-bottom: var(--space-3);">
+        <p style="font-size: var(--font-size-sm); color: var(--color-scope-text-muted); margin-bottom: var(--space-3);">
             @(Model.MisuseExplanation ?? "NextStep is designed to help you prioritize messy real-life situations and decide what to do next. It cannot generate general-purpose essays or write coursework for you.")
         </p>
-        <p style="font-size: var(--font-size-xs); color: #3b82f6; margin-bottom: 0;">
+        <p style="font-size: var(--font-size-xs); color: var(--color-scope-accent); margin-bottom: 0;">
             If this assignment is part of a stressful evening or deadline conflict, describe your competing priorities and NextStep will help you structure your evening.
         </p>
     </section>
@@ -115,10 +115,10 @@
 @if (Model.IsWorseAfterAction)
 {
     <section class="worse-after-action-card" id="worseAfterActionCard" aria-labelledby="worseAfterActionHeading">
-        <h2 id="worseAfterActionHeading" style="font-size: var(--font-size-base); color: #9a3412; margin-bottom: var(--space-1);">
+        <h2 id="worseAfterActionHeading" style="font-size: var(--font-size-base); color: var(--color-recovery-text); margin-bottom: var(--space-1);">
             Situation Recovery &amp; Reassessment
         </h2>
-        <p style="font-size: var(--font-size-sm); color: #c2410c; margin-bottom: var(--space-3);">
+        <p style="font-size: var(--font-size-sm); color: var(--color-recovery-text-muted); margin-bottom: var(--space-3);">
             @(Model.WorseOutcomeAnalysis ?? "When previous action results in unexpected escalation, pause and reset. The immediate focus is de-escalation rather than escalating the dispute.")
         </p>
 
@@ -157,7 +157,28 @@ else
     <!-- INFORMATION HIERARCHY (Requirement 5 & 6) -->
     <!-- Primary Issue and Recommended Next Action appear Above The Fold on 360px screen -->
     <div class="above-fold-hero" id="aboveFoldHero">
-        @if (Model.PrimaryIssue != null)
+        @if (Model.HasTiedTopPriorities)
+        {
+            <div class="tied-top-priorities-container" id="tiedTopPrioritiesContainer">
+                <div style="font-size: var(--font-size-xs); font-weight: var(--font-weight-bold); text-transform: uppercase; color: var(--color-priority-tied-text); margin-bottom: var(--space-1); letter-spacing: 0.05em; display: flex; align-items: center; gap: var(--space-1);">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <line x1="5" y1="9" x2="19" y2="9"></line>
+                        <line x1="5" y1="15" x2="19" y2="15"></line>
+                    </svg>
+                    Equal Top Priorities
+                </div>
+                <div class="alert alert-warning" style="margin-bottom: var(--space-3); padding: var(--space-2) var(--space-3); font-size: var(--font-size-xs);" role="note">
+                    <strong>Tied Priorities:</strong> There is no single primary issue right now. The following @Model.TiedTopIssues.Count issues share equal top priority:
+                </div>
+                <div class="tied-priorities-grid" style="display: grid; gap: var(--space-3);">
+                    @foreach (var issue in Model.TiedTopIssues)
+                    {
+                        @await Html.PartialAsync("_PriorityCard", issue)
+                    }
+                </div>
+            </div>
+        }
+        else if (Model.PrimaryIssue != null)
         {
             <div class="primary-issue-container">
                 <div style="font-size: var(--font-size-xs); font-weight: var(--font-weight-bold); text-transform: uppercase; color: var(--color-brand-700); margin-bottom: var(--space-1); letter-spacing: 0.05em;">
@@ -294,6 +315,7 @@ else
                        id="updateText" 
                        class="situation-textarea" 
                        style="min-height: 48px; height: 48px; padding: var(--space-2);"
+                       value="@(TempData["PreservedUpdateText"] as string ?? "")"
                        placeholder="e.g. Professor just replied, deadline moved to Thursday..." />
             </div>
 
@@ -331,6 +353,7 @@ else
                        class="situation-textarea" 
                        style="min-height: 48px; height: 48px; padding: var(--space-2);"
                        required
+                       value="@(TempData["PreservedUpdateText"] as string ?? "")"
                        placeholder="e.g. I spoke to my partner, or I emailed my guide..." />
             </div>
 

@@ -352,17 +352,27 @@ We engineered a **Tri-Layer Resilience Strategy**:
 
 ---
 
-## 10. AI Usage Disclosure
+## AI Assistance
 
-In compliance with challenge requirements, the following details the AI-assisted development workflow:
+The project was developed with assistance from Antigravity AI during the development process.
 
-| Dimension | Details |
-| :--- | :--- |
-| **AI Tools Used** | Antigravity AI Assistant (Google DeepMind Gemini 3.8 Flash model). |
-| **Tasks Requested** | Generating boilerplate EF Core entity mappings, CSS token structures, xUnit challenge scenario test models, and markdown documentation formatting. |
-| **What Was Accepted** | Architecture design for separation of concerns, relational entity relationships, CSS custom property structure (`tokens.css`), and the 14 automated unit test scenarios. |
-| **What Was Rejected / Modified** | - AI initially attempted to introduce `[Timestamp]` byte arrays on SQLite, which was immediately rejected because the specification strictly mandates SQL Server LocalDB with physical MDF file attachment.<br>- AI proposed using generic external JavaScript utility libraries (like lodash or Axios), which was rejected in favor of pure vanilla JavaScript.<br>- AI suggested placing all AI parsing directly in the controller; this was refactored into `INextStepApiService`, `NextStepApiService`, and `AiResponseValidator`. |
-| **Specific AI Correction Example** | When generating the EF Core migrations for versioning, the AI initially attempted to use cascading deletes on both `Situation -> SituationVersion` and `SituationVersion -> Assessment`. In SQL Server, multiple cascade paths can trigger error `1785` ("cycles or multiple cascade paths"). This was corrected by configuring explicit cascade behavior and foreign keys in `NextStepDbContext.OnModelCreating`. |
+1. **AI tool used:**
+   - Antigravity AI
+
+2. **How it was used:**
+   - Helped with implementation suggestions and code generation.
+   - Helped identify bugs and debug implementation issues.
+   - Helped review requirements against the existing implementation.
+   - Helped with testing ideas and edge-case verification.
+   - Helped refine the README/documentation where appropriate.
+
+3. **Human responsibility:**
+   - The generated suggestions and code were reviewed manually.
+   - Incorrect or unnecessary suggestions were rejected or modified.
+   - Final implementation decisions, testing, and submission preparation were reviewed by the developer.
+
+4. **AI limitations / correction:**
+   - *Real example from this project:* During implementation of the situation update validation pipeline in `SituationService.ProcessSituationUpdateAsync`, an AI-generated return statement incorrectly passed the boolean validation flag `validation.CanRetry` as the third tuple element `IsStale` in `(SituationResultViewModel? Result, string? ErrorMessage, bool IsStale)`. Because `validation.CanRetry` evaluated to `true`, this caused validation errors on malformed API responses to be misclassified as two-tab staleness conflicts, rendering an inappropriate banner in the UI. Through automated xUnit test verification (`Test20_SituationUpdate_MalformedApiResponse_PreservesPreviousValidVersion_PreservesUserText`), the mismatch was identified and corrected to return `IsStale = false` on validation failure, properly displaying the calm error message and preserving the user's update text.
 
 ---
 

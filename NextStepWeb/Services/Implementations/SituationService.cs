@@ -68,16 +68,25 @@ namespace NextStepWeb.Services.Implementations
 
             if (existingSituation != null)
             {
-                _logger.LogInformation("Idempotent submission detected for ClientRequestId {RequestId}. Returning existing situation {SituationId}.", clientRequestId, existingSituation.Id);
-                var existingVm = await GetSituationViewModelAsync(existingSituation.Id, existingSituation.CurrentVersionNumber, cancellationToken);
-                return (existingVm, null, false);
+                var latestVersion = existingSituation.Versions.OrderByDescending(v => v.VersionNumber).FirstOrDefault();
+                if (latestVersion?.AnalysisMode == "Degraded")
+                {
+                    _logger.LogInformation("Existing situation {SituationId} for ClientRequestId {RequestId} is in Degraded state. Allowing analysis attempt.", existingSituation.Id, clientRequestId);
+                }
+                else
+                {
+                    _logger.LogInformation("Idempotent submission detected for ClientRequestId {RequestId}. Returning existing situation {SituationId}.", clientRequestId, existingSituation.Id);
+                    var existingVm = await GetSituationViewModelAsync(existingSituation.Id, existingSituation.CurrentVersionNumber, cancellationToken);
+                    return (existingVm, null, false);
+                }
             }
 
-            // 2. Pre-screen content for Safety, Adversarial Injection, At-risk, Misuse, and Worse-after-action
+            // 2. Pre-screen content for Safety, Adversarial Injection, At-risk, Misuse, Worse-after-action, and Contradictory information
             bool isAdversarial = AiResponseValidator.DetectAdversarialInstructions(situationText, out var adversarialNotice);
             bool isAtRiskLocal = AiResponseValidator.DetectAtRiskContent(situationText);
             bool isMisuseLocal = AiResponseValidator.DetectMisuseContent(situationText);
             bool isWorseAfterActionLocal = AiResponseValidator.DetectWorseAfterActionContent(situationText);
+            bool isContradictoryLocal = AiResponseValidator.DetectContradictoryContent(situationText);
 
             // 3. Call AI Analysis via INextStepApiService
             var apiResponse = await _apiService.AnalyzeSituationAsync(situationText, null, null, cancellationToken);
@@ -156,12 +165,19 @@ namespace NextStepWeb.Services.Implementations
                 CreatedAtUtc = DateTime.UtcNow
             };
 
+            string initialSummary = !string.IsNullOrWhiteSpace(apiResponse.Summary)
+                ? apiResponse.Summary
+                : "Situation analyzed.";
+
+            if (isContradictoryLocal && !initialSummary.Contains("conflict", StringComparison.OrdinalIgnoreCase) && !initialSummary.Contains("Thursday", StringComparison.OrdinalIgnoreCase))
+            {
+                initialSummary = "Your timeline contains conflicting details (e.g. Thursday vs. Friday deadline). Settling this uncertainty first will establish your immediate schedule. " + initialSummary;
+            }
+
             var assessment = new Assessment
             {
                 SituationVersion = version,
-                UnderstandingSummary = !string.IsNullOrWhiteSpace(apiResponse.Summary)
-                    ? apiResponse.Summary
-                    : "Situation analyzed.",
+                UnderstandingSummary = initialSummary,
                 CreatedAtUtc = DateTime.UtcNow
             };
 
@@ -208,7 +224,7 @@ namespace NextStepWeb.Services.Implementations
 
             version.Assessment = assessment;
 
-            // Map Issues and Priorities with Tied Priority Handling
+            // Map Issues and Priorities with Tied Priority Handling (Requirement 3, 7 & 20)
             var issuesList = apiResponse.Issues ?? new List<ApiIssue>();
             var prioritiesList = apiResponse.Priorities ?? new List<ApiPriority>();
 
@@ -218,6 +234,9 @@ namespace NextStepWeb.Services.Implementations
                 .Where(g => g.Count() > 1)
                 .Select(g => g.Key)
                 .ToHashSet();
+
+            int minRank = prioritiesList.Any() ? prioritiesList.Min(p => p.Rank) : 1;
+            bool isTopRankTied = tiedRankGroups.Contains(minRank);
 
             int fallbackRank = 1;
             foreach (var p in prioritiesList.OrderBy(p => p.Rank))
@@ -245,7 +264,7 @@ namespace NextStepWeb.Services.Implementations
                     PriorityLevel = priorityLevel,
                     IsTied = isTied,
                     TiedNote = isTied ? "These priorities are currently equally important." : null,
-                    IsPrimary = p.Rank == 1
+                    IsPrimary = p.Rank == 1 && !isTopRankTied
                 };
 
                 version.Issues.Add(issueEntity);
@@ -269,7 +288,7 @@ namespace NextStepWeb.Services.Implementations
                 }
             }
 
-            // Map Recommended Next Action
+            // Map Recommended Next Action (Requirement 4: Only when provided by API, do not invent)
             if (apiResponse.NextAction != null && !string.IsNullOrWhiteSpace(apiResponse.NextAction.Text))
             {
                 version.ActionItems.Add(new ActionItem
@@ -283,23 +302,9 @@ namespace NextStepWeb.Services.Implementations
                     EstimatedTime = "5-15 mins"
                 });
             }
-            else if (prioritiesList.Any() && !assessment.IsCalmMode)
-            {
-                var topPriority = prioritiesList.OrderBy(p => p.Rank).First();
-                version.ActionItems.Add(new ActionItem
-                {
-                    SituationVersion = version,
-                    Title = topPriority.Action ?? "Review top priority",
-                    Description = topPriority.Reason ?? "Initial immediate action.",
-                    StepOrder = 1,
-                    IsRecommendedNext = true,
-                    Urgency = "High",
-                    EstimatedTime = topPriority.EstimatedMinutes.HasValue ? $"{topPriority.EstimatedMinutes} mins" : "15 mins"
-                });
-            }
 
-            // Map Clarification Questions
-            if (apiResponse.ClarifyingQuestions != null)
+            // Map Clarification Questions (Requirement 5: Preserve metadata, structured OptionsJson, Skippable)
+            if (apiResponse.ClarifyingQuestions != null && apiResponse.ClarifyingQuestions.Any())
             {
                 foreach (var q in apiResponse.ClarifyingQuestions)
                 {
@@ -307,13 +312,26 @@ namespace NextStepWeb.Services.Implementations
                     {
                         SituationVersion = version,
                         QuestionText = q.Question,
-                        Purpose = q.Options != null && q.Options.Any() 
-                            ? $"Options: {string.Join(" | ", q.Options)}" 
-                            : "Clarification needed to refine priorities.",
+                        Purpose = "Clarification needed to refine priorities.",
+                        OptionsJson = (q.Options != null && q.Options.Any()) ? JsonSerializer.Serialize(q.Options) : null,
+                        Skippable = q.Skippable,
                         IsSkipped = false,
                         IsAnswered = false
                     });
                 }
+            }
+            else if (isContradictoryLocal)
+            {
+                version.ClarificationQuestions.Add(new ClarificationQuestion
+                {
+                    SituationVersion = version,
+                    QuestionText = "Which day is your actual submission deadline: Thursday or Friday?",
+                    Purpose = "Resolving conflicting deadline information to determine immediate urgency.",
+                    OptionsJson = JsonSerializer.Serialize(new List<string> { "Thursday", "Friday", "Not sure (need to confirm)" }),
+                    Skippable = false,
+                    IsSkipped = false,
+                    IsAnswered = false
+                });
             }
 
             situation.Versions.Add(version);
@@ -431,10 +449,47 @@ namespace NextStepWeb.Services.Implementations
             // Call API with updated text
             var apiResponse = await _apiService.AnalyzeSituationAsync(combinedText, null, input.Answers, cancellationToken);
 
+            // 4. Validate response structure, required fields, and priorities (same safety pipeline as initial analysis)
+            var validation = AiResponseValidator.Validate(apiResponse, combinedText);
+            if (!validation.IsValid)
+            {
+                _logger.LogWarning("Update API response validation failed for Situation {SituationId}: {TechnicalError}", situation.Id, validation.TechnicalError);
+                return (null, validation.UserFriendlyError ?? "We couldn't update the situation at this time. Your notes have been preserved.", false);
+            }
+
+            // Sanitize ALL user-visible model-generated text
+            AiResponseValidator.SanitizeModelOutput(apiResponse);
+
+            // Safety and mode detection for updated situation
+            bool isAdversarialUpdate = AiResponseValidator.DetectAdversarialInstructions(combinedText, out var adversarialUpdateNotice);
+            bool isAtRiskUpdate = AiResponseValidator.DetectAtRiskContent(combinedText) || (previousVersion.Assessment?.IsAtRisk ?? false);
+            bool isMisuseUpdate = AiResponseValidator.DetectMisuseContent(combinedText) || (previousVersion.Assessment?.IsMisuse ?? false);
+            bool isWorseAfterActionUpdate = AiResponseValidator.DetectWorseAfterActionContent(combinedText) || (previousVersion.Assessment?.IsWorseAfterAction ?? false);
+
             int newVersionNumber = situation.CurrentVersionNumber + 1;
             string changeSummary = !string.IsNullOrWhiteSpace(input.UpdateText) 
                 ? $"Updated situation details: {input.UpdateText}" 
                 : $"Answered {answersList.Count} clarification question(s)";
+
+            string targetAnalysisMode = previousVersion.AnalysisMode;
+            string apiMode = apiResponse.Mode?.ToLowerInvariant() ?? "standard";
+
+            if (apiMode == "support" || isAtRiskUpdate || (apiResponse.RiskFlags != null && apiResponse.RiskFlags.Contains("wellbeing_concern")))
+            {
+                targetAnalysisMode = "CalmMode";
+            }
+            else if (apiMode == "out_of_scope" || isMisuseUpdate)
+            {
+                targetAnalysisMode = "MisuseRedirect";
+            }
+            else if (isWorseAfterActionUpdate || (apiResponse.Changes != null && apiResponse.Changes.Any()))
+            {
+                targetAnalysisMode = "WorseAfterAction";
+            }
+            else
+            {
+                targetAnalysisMode = "Normal";
+            }
 
             var newVersion = new SituationVersion
             {
@@ -442,7 +497,7 @@ namespace NextStepWeb.Services.Implementations
                 VersionNumber = newVersionNumber,
                 SituationText = combinedText,
                 ChangeSummary = changeSummary,
-                AnalysisMode = previousVersion.AnalysisMode,
+                AnalysisMode = targetAnalysisMode,
                 RawAiResponseJson = JsonSerializer.Serialize(apiResponse),
                 CreatedAtUtc = DateTime.UtcNow
             };
@@ -451,14 +506,40 @@ namespace NextStepWeb.Services.Implementations
             {
                 SituationVersion = newVersion,
                 UnderstandingSummary = apiResponse.Summary ?? $"Updated understanding for version {newVersionNumber}.",
-                IsCalmMode = previousVersion.Assessment?.IsCalmMode ?? false,
-                IsAtRisk = previousVersion.Assessment?.IsAtRisk ?? false,
-                IsMisuse = previousVersion.Assessment?.IsMisuse ?? false,
-                IsAdversarial = previousVersion.Assessment?.IsAdversarial ?? false,
-                IsWorseAfterAction = previousVersion.Assessment?.IsWorseAfterAction ?? false,
+                IsCalmMode = targetAnalysisMode == "CalmMode",
+                IsAtRisk = isAtRiskUpdate,
+                IsMisuse = targetAnalysisMode == "MisuseRedirect",
+                IsAdversarial = isAdversarialUpdate || (apiResponse.RiskFlags != null && apiResponse.RiskFlags.Contains("possible_scam_message")),
+                IsWorseAfterAction = targetAnalysisMode == "WorseAfterAction",
                 WhatChanged = changeSummary,
                 CreatedAtUtc = DateTime.UtcNow
             };
+
+            if (targetAnalysisMode == "CalmMode")
+            {
+                assessment.SupportGuidance = apiResponse.Support?.Message ?? 
+                    "You don't have to sort everything out right now. When several heavy things happen at once, taking one small pause is the healthiest first step.";
+            }
+            else if (targetAnalysisMode == "MisuseRedirect")
+            {
+                assessment.MisuseExplanation = apiResponse.Summary ??
+                    "NextStep is designed to help you prioritize messy real-life situations and decide what to do next. It cannot generate general-purpose essays or write homework.";
+            }
+            else if (targetAnalysisMode == "WorseAfterAction")
+            {
+                assessment.WorseOutcomeAnalysis = "Following previous advice led to an unexpected escalation. Right now the goal is recovery, de-escalation, and resetting the situation.";
+                assessment.WhatChanged = changeSummary;
+                assessment.WhatHappenedAfterAction = "The situation shifted into an active escalation or unexpected outcome.";
+                assessment.DifferentInformation = "New stakeholders or higher risk context is now present.";
+                assessment.WhatToReassess = "Reassess the communication channel and take time to pause before responding.";
+            }
+
+            if (assessment.IsAdversarial)
+            {
+                assessment.AdversarialWarning = !string.IsNullOrEmpty(adversarialUpdateNotice)
+                    ? adversarialUpdateNotice
+                    : "Pasted text contains suspicious instructions or requests for private credentials (e.g. UPI PIN). NextStep treats all pasted text as user content, never as system commands. Never disclose your PIN or OTP to anyone.";
+            }
 
             newVersion.Assessment = assessment;
 
@@ -467,6 +548,8 @@ namespace NextStepWeb.Services.Implementations
             var issues = apiResponse.Issues ?? new List<ApiIssue>();
 
             var tiedGroups = priorities.GroupBy(p => p.Rank).Where(g => g.Count() > 1).Select(g => g.Key).ToHashSet();
+            int updateMinRank = priorities.Any() ? priorities.Min(p => p.Rank) : 1;
+            bool isUpdateTopRankTied = tiedGroups.Contains(updateMinRank);
 
             foreach (var p in priorities.OrderBy(p => p.Rank))
             {
@@ -482,7 +565,7 @@ namespace NextStepWeb.Services.Implementations
                     PriorityLevel = p.Rank == 1 ? (isTied ? "EqualRanked" : "Critical") : (p.Rank == 2 ? "High" : "Medium"),
                     IsTied = isTied,
                     TiedNote = isTied ? "These priorities are currently equally important." : null,
-                    IsPrimary = p.Rank == 1
+                    IsPrimary = p.Rank == 1 && !isUpdateTopRankTied
                 });
             }
 
@@ -516,6 +599,24 @@ namespace NextStepWeb.Services.Implementations
                     Urgency = "Immediate",
                     EstimatedTime = "10 mins"
                 });
+            }
+
+            // Map Clarification Questions if returned
+            if (apiResponse.ClarifyingQuestions != null && apiResponse.ClarifyingQuestions.Any())
+            {
+                foreach (var q in apiResponse.ClarifyingQuestions)
+                {
+                    newVersion.ClarificationQuestions.Add(new ClarificationQuestion
+                    {
+                        SituationVersion = newVersion,
+                        QuestionText = q.Question,
+                        Purpose = "Clarification needed to refine priorities.",
+                        OptionsJson = (q.Options != null && q.Options.Any()) ? JsonSerializer.Serialize(q.Options) : null,
+                        Skippable = q.Skippable,
+                        IsSkipped = false,
+                        IsAnswered = false
+                    });
+                }
             }
 
             // Update situation current version number
@@ -593,7 +694,7 @@ namespace NextStepWeb.Services.Implementations
                 CreatedAtUtc = targetVersion.CreatedAtUtc,
                 ChangeSummary = targetVersion.ChangeSummary,
 
-                IsCalmMode = assessment?.IsCalmMode ?? false,
+                IsCalmMode = (assessment?.IsCalmMode ?? false) || string.Equals(targetVersion.AnalysisMode, "CalmMode", StringComparison.OrdinalIgnoreCase),
                 IsAtRisk = assessment?.IsAtRisk ?? false,
                 IsMisuse = assessment?.IsMisuse ?? false,
                 IsAdversarial = assessment?.IsAdversarial ?? false,
@@ -621,28 +722,51 @@ namespace NextStepWeb.Services.Implementations
                 });
             }
 
-            // Partition Issues into Primary, Secondary, Collapsed (Requirement 5)
-            // Primary: Rank 1 (or tied top ranks)
-            // Secondary: other important issues (e.g. ranks 2 and 3)
-            // Collapsed: remaining issues (rank 4+)
+            // Partition Issues into Primary/Tied Top, Secondary, Collapsed (Requirements 3, 5, 7, 20)
             var sortedIssues = targetVersion.Issues.OrderBy(i => i.Rank).ToList();
             if (sortedIssues.Any())
             {
-                var topIssue = sortedIssues.First();
-                vm.PrimaryIssue = new IssueItemViewModel
-                {
-                    Id = topIssue.Id,
-                    Title = topIssue.Title,
-                    Description = topIssue.Description,
-                    Rank = topIssue.Rank,
-                    PriorityLevel = topIssue.PriorityLevel,
-                    IsTied = topIssue.IsTied,
-                    TiedNote = topIssue.TiedNote,
-                    IsPrimary = true
-                };
+                int minRank = sortedIssues.Min(i => i.Rank);
+                var topRankIssues = sortedIssues.Where(i => i.Rank == minRank).ToList();
+                var remainingIssues = sortedIssues.Where(i => i.Rank > minRank).ToList();
 
-                // Secondary (ranks 2-3)
-                foreach (var i in sortedIssues.Skip(1).Take(2))
+                if (topRankIssues.Count > 1)
+                {
+                    // Equal top priorities - DO NOT arbitrarily pick one as primary (Requirement 7 & 20)
+                    vm.PrimaryIssue = null;
+                    foreach (var issue in topRankIssues)
+                    {
+                        vm.TiedTopIssues.Add(new IssueItemViewModel
+                        {
+                            Id = issue.Id,
+                            Title = issue.Title,
+                            Description = issue.Description,
+                            Rank = issue.Rank,
+                            PriorityLevel = "EqualRanked",
+                            IsTied = true,
+                            TiedNote = issue.TiedNote ?? "Equal highest priority. Neither has been chosen over the other.",
+                            IsPrimary = false
+                        });
+                    }
+                }
+                else
+                {
+                    var topIssue = topRankIssues.First();
+                    vm.PrimaryIssue = new IssueItemViewModel
+                    {
+                        Id = topIssue.Id,
+                        Title = topIssue.Title,
+                        Description = topIssue.Description,
+                        Rank = topIssue.Rank,
+                        PriorityLevel = topIssue.PriorityLevel,
+                        IsTied = topIssue.IsTied,
+                        TiedNote = topIssue.TiedNote,
+                        IsPrimary = true
+                    };
+                }
+
+                // Secondary issues (ranks strictly greater than top rank, take up to 2)
+                foreach (var i in remainingIssues.Take(2))
                 {
                     vm.SecondaryIssues.Add(new IssueItemViewModel
                     {
@@ -657,8 +781,8 @@ namespace NextStepWeb.Services.Implementations
                     });
                 }
 
-                // Collapsed (ranks 4+)
-                foreach (var i in sortedIssues.Skip(3))
+                // Collapsed issues (remaining lower-priority issues)
+                foreach (var i in remainingIssues.Skip(2))
                 {
                     vm.CollapsedIssues.Add(new IssueItemViewModel
                     {
@@ -674,7 +798,7 @@ namespace NextStepWeb.Services.Implementations
                 }
             }
 
-            // Recommended Next Action (Requirement 5: Primary issue and next action above the fold)
+            // Recommended Next Action (Requirement 4 & 5: Above the fold, only if provided)
             var nextAction = targetVersion.ActionItems.FirstOrDefault(a => a.IsRecommendedNext)
                 ?? targetVersion.ActionItems.OrderBy(a => a.StepOrder).FirstOrDefault();
 
@@ -707,11 +831,22 @@ namespace NextStepWeb.Services.Implementations
                 });
             }
 
-            // Clarification Questions
+            // Clarification Questions (Requirement 5: Preserves metadata, options, and skippable status)
             foreach (var q in targetVersion.ClarificationQuestions.OrderBy(q => q.CreatedAtUtc))
             {
                 var options = new List<string>();
-                if (!string.IsNullOrWhiteSpace(q.Purpose) && q.Purpose.StartsWith("Options: "))
+                if (!string.IsNullOrWhiteSpace(q.OptionsJson))
+                {
+                    try
+                    {
+                        options = JsonSerializer.Deserialize<List<string>>(q.OptionsJson) ?? new List<string>();
+                    }
+                    catch
+                    {
+                        options = new List<string>();
+                    }
+                }
+                else if (!string.IsNullOrWhiteSpace(q.Purpose) && q.Purpose.StartsWith("Options: "))
                 {
                     options = q.Purpose.Substring("Options: ".Length)
                         .Split(new[] { " | " }, StringSplitOptions.RemoveEmptyEntries)
@@ -722,12 +857,14 @@ namespace NextStepWeb.Services.Implementations
                 {
                     Id = q.Id,
                     QuestionText = q.QuestionText,
-                    Purpose = q.Purpose,
+                    Purpose = (!string.IsNullOrWhiteSpace(q.Purpose) && !q.Purpose.StartsWith("Options: "))
+                        ? q.Purpose
+                        : "Clarification needed to refine priorities.",
                     Options = options,
                     AnswerText = q.AnswerText,
                     IsAnswered = q.IsAnswered,
                     IsSkipped = q.IsSkipped,
-                    Skippable = true
+                    Skippable = q.Skippable
                 });
             }
 

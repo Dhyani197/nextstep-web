@@ -16,6 +16,17 @@
         @await Html.PartialAsync("_ErrorState", (Model.ErrorMessage, Model.CanRetry))
     }
 
+    <div id="draftRestoredBanner" class="alert alert-info" style="display: none; margin-bottom: var(--space-4);" role="status">
+        <div style="display: flex; align-items: center; gap: var(--space-2);">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="16" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+            </svg>
+            <span id="draftRestoredText">Your entered situation was preserved. You can review and continue.</span>
+        </div>
+    </div>
+
     <section class="situation-form-card" aria-labelledby="formTitle">
         <h2 id="formTitle" class="sr-only" style="position: absolute; width: 1px; height: 1px; overflow: hidden;">Situation Description Form</h2>
 

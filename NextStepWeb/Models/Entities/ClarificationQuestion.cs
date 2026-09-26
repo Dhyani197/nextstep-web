@@ -25,6 +25,10 @@ namespace NextStepWeb.Models.Entities
 
         public string? AnswerText { get; set; }
 
+        public string? OptionsJson { get; set; }
+
+        public bool Skippable { get; set; } = true;
+
         public bool IsAnswered { get; set; } = false;
 
         public bool IsSkipped { get; set; } = false;

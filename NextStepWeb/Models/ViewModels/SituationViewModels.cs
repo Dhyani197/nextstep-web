@@ -52,8 +52,10 @@ namespace NextStepWeb.Models.ViewModels
         public string? DifferentInformation { get; set; }
         public string? WhatToReassess { get; set; }
 
-        // Information Hierarchy: Primary, Secondary, Collapsed
+        // Information Hierarchy: Primary, Tied Top Priorities, Secondary, Collapsed
         public IssueItemViewModel? PrimaryIssue { get; set; }
+        public List<IssueItemViewModel> TiedTopIssues { get; set; } = new List<IssueItemViewModel>();
+        public bool HasTiedTopPriorities => TiedTopIssues != null && TiedTopIssues.Count > 1;
         public ActionItemViewModel? RecommendedNextAction { get; set; }
         public List<IssueItemViewModel> SecondaryIssues { get; set; } = new List<IssueItemViewModel>();
         public List<IssueItemViewModel> CollapsedIssues { get; set; } = new List<IssueItemViewModel>();

@@ -57,6 +57,9 @@ namespace NextStepWeb.Controllers
             {
                 model.ErrorMessage = error ?? "The analysis could not be completed. Your situation has been saved.";
                 model.CanRetry = canRetry;
+                // Prepare a fresh ClientRequestId (B) for the retry attempt so that it is not short-circuited
+                // by the idempotency check of the failed initial request (A).
+                model.ClientRequestId = Guid.NewGuid().ToString("N");
                 return View("Index", model);
             }
 
@@ -102,6 +105,7 @@ namespace NextStepWeb.Controllers
             if (result == null)
             {
                 TempData["ErrorMessage"] = error ?? "Could not update situation at this time.";
+                TempData["PreservedUpdateText"] = input.UpdateText;
                 return RedirectToAction(nameof(Details), new { id = input.SituationId, v = input.ExpectedVersion });
             }
 

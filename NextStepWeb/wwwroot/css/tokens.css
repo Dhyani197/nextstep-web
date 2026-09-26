@@ -68,6 +68,30 @@
   --color-info-border: #93c5fd;
   --color-info-text: #1e40af;
 
+  /* Security / Adversarial Guardrail Tokens */
+  --color-security-bg: #fffbeb;
+  --color-security-border: #fcd34d;
+  --color-security-text: #92400e;
+  --color-security-text-muted: #78350f;
+
+  /* Out-of-Scope / Misuse Tokens */
+  --color-scope-bg: #eff6ff;
+  --color-scope-border: #93c5fd;
+  --color-scope-text: #1e40af;
+  --color-scope-text-muted: #1e3a8a;
+  --color-scope-accent: #3b82f6;
+
+  /* Recovery / Reassessment Tokens */
+  --color-recovery-bg: #fff7ed;
+  --color-recovery-border: #fdba74;
+  --color-recovery-text: #9a3412;
+  --color-recovery-text-muted: #c2410c;
+
+  /* Form Requirement Badge Tokens */
+  --color-required-bg: #fee2e2;
+  --color-required-border: #f87171;
+  --color-required-text: #991b1b;
+
   /* Typography */
   --font-family-base: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-family-heading: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;

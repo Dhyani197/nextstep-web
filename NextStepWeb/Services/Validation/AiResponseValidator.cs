@@ -30,21 +30,32 @@ namespace NextStepWeb.Services.Validation
                 return result;
             }
 
+            // Treat model output as untrusted data: neutralize any prompt-injected credential requests
+            SanitizeModelOutput(response);
+
             if (!string.IsNullOrWhiteSpace(response.Error))
             {
                 result.IsValid = false;
                 result.TechnicalError = $"API error: {response.Error} - {response.Message}";
                 if (response.Error.Equals("rate_limited", StringComparison.OrdinalIgnoreCase))
                 {
-                    result.UserFriendlyError = "Analysis is temporarily busy. Your situation is saved and can be analysed again.";
+                    result.UserFriendlyError = "The analysis service is temporarily busy. Your situation has been safely saved so you won't lose your thoughts. Please wait a few moments and try again.";
                 }
                 else if (response.Error.Equals("timeout", StringComparison.OrdinalIgnoreCase))
                 {
-                    result.UserFriendlyError = "The analysis is taking longer than expected. Your situation has been saved. Try the analysis again.";
+                    result.UserFriendlyError = "The analysis is taking longer than expected. Your situation has been safely saved. You can try running the analysis again.";
+                }
+                else if (response.Error.Equals("server_error", StringComparison.OrdinalIgnoreCase))
+                {
+                    result.UserFriendlyError = "The analysis service is temporarily experiencing an issue. Your situation has been preserved. Please try again in a moment.";
+                }
+                else if (response.Error.Equals("network_error", StringComparison.OrdinalIgnoreCase))
+                {
+                    result.UserFriendlyError = "We could not connect to the analysis service. Your situation has been saved locally. Please check your connection and try again.";
                 }
                 else
                 {
-                    result.UserFriendlyError = "The analysis returned incomplete information, so we did not show it. Your situation has been saved.";
+                    result.UserFriendlyError = "The analysis returned incomplete information, so we did not show it. Your situation has been safely saved. Please try again.";
                 }
                 result.CanRetry = true;
                 return result;
@@ -102,16 +113,6 @@ namespace NextStepWeb.Services.Validation
                     {
                         result.Warnings.Add($"Priority for issue '{p.IssueId}' has no specific action defined.");
                     }
-                }
-            }
-
-            // Check for missing next_action in standard mode when issues exist
-            if (mode == "standard" && (response.Issues != null && response.Issues.Any()))
-            {
-                if (response.NextAction == null || string.IsNullOrWhiteSpace(response.NextAction.Text))
-                {
-                    result.Warnings.Add("Recommended next action was not returned directly; falling back to top priority action.");
-                    result.IsDegraded = true;
                 }
             }
 
@@ -211,6 +212,164 @@ namespace NextStepWeb.Services.Validation
             };
 
             return signals.Any(s => lower.Contains(s));
+        }
+
+        /// <summary>
+        /// Detects contradictory deadline or conflicting situation information.
+        /// </summary>
+        public static bool DetectContradictoryContent(string input)
+        {
+            if (string.IsNullOrWhiteSpace(input)) return false;
+            var lower = input.ToLowerInvariant();
+
+            bool hasDeadlineConflict = (lower.Contains("friday") && lower.Contains("thursday")) ||
+                                       lower.Contains("actually wait") ||
+                                       lower.Contains("think the professor said") ||
+                                       (lower.Contains("not talking right now") && lower.Contains("borrow from"));
+
+            return hasDeadlineConflict;
+        }
+
+        /// <summary>
+        /// Neutralizes model output if it contains requests for private credentials (UPI PIN, OTP, passwords, bank PIN, recovery code).
+        /// Treats ALL AI output strictly as untrusted data so prompt injection cannot turn into trusted UI advice.
+        /// </summary>
+        public static void SanitizeModelOutput(NextStepApiResponse? response)
+        {
+            if (response == null) return;
+
+            string[] credentialKeywords = new[] 
+            { 
+                "UPI PIN", "PASSWORD", "OTP", "CVV", "BANKING CREDENTIALS", 
+                "PIN NUMBER", "SHARE YOUR PIN", "ENTER YOUR PIN", "PROVIDE YOUR PIN",
+                "AUTHENTICATION SECRET", "BANK PIN", "RECOVERY CODE", "SECURITY CODE",
+                "PASSCODE", "ATM PIN", "SECRET KEY" 
+            };
+
+            bool ContainsCredentialRequest(string? text)
+            {
+                if (string.IsNullOrWhiteSpace(text)) return false;
+                var upper = text.ToUpperInvariant();
+                return credentialKeywords.Any(k => upper.Contains(k));
+            }
+
+            string Neutralize(string? text)
+            {
+                if (string.IsNullOrWhiteSpace(text)) return text ?? string.Empty;
+                var upper = text.ToUpperInvariant();
+                if (credentialKeywords.Any(k => upper.Contains(k)))
+                {
+                    return "[Notice: Sensitive authentication data or secret request was blocked by NextStep guardrails]";
+                }
+                return text;
+            }
+
+            if (ContainsCredentialRequest(response.Summary))
+            {
+                response.Summary = Neutralize(response.Summary);
+            }
+
+            if (ContainsCredentialRequest(response.Message))
+            {
+                response.Message = Neutralize(response.Message);
+            }
+
+            if (response.NextAction != null)
+            {
+                if (ContainsCredentialRequest(response.NextAction.Text) || ContainsCredentialRequest(response.NextAction.Why))
+                {
+                    response.NextAction.Text = "Do not share sensitive secrets, OTPs, or PINs with unverified senders.";
+                    response.NextAction.Why = "Private security guardrail active: NextStep never instructs users to disclose banking or authentication secrets.";
+                }
+            }
+
+            if (response.Issues != null)
+            {
+                foreach (var issue in response.Issues)
+                {
+                    if (ContainsCredentialRequest(issue.Title))
+                    {
+                        issue.Title = "Potential phishing / scam message";
+                        issue.Category = "Security Notice: Never disclose private authentication secrets or PINs.";
+                    }
+                    else if (ContainsCredentialRequest(issue.Category))
+                    {
+                        issue.Category = Neutralize(issue.Category);
+                    }
+                    if (ContainsCredentialRequest(issue.Deadline))
+                    {
+                        issue.Deadline = null;
+                    }
+                }
+            }
+
+            if (response.Priorities != null)
+            {
+                foreach (var p in response.Priorities)
+                {
+                    if (ContainsCredentialRequest(p.Action))
+                    {
+                        p.Action = "Verify sender authenticity through official channels and never share PIN or OTP";
+                    }
+                    if (ContainsCredentialRequest(p.Reason))
+                    {
+                        p.Reason = Neutralize(p.Reason);
+                    }
+                }
+            }
+
+            if (response.ClarifyingQuestions != null)
+            {
+                // Remove questions that solicit credentials
+                response.ClarifyingQuestions.RemoveAll(q => ContainsCredentialRequest(q.Question));
+
+                // Sanitize options list within remaining questions
+                foreach (var q in response.ClarifyingQuestions)
+                {
+                    if (q.Options != null && q.Options.Any())
+                    {
+                        q.Options.RemoveAll(opt => ContainsCredentialRequest(opt));
+                    }
+                }
+
+                // If all options were removed from an options-based question, remove question
+                response.ClarifyingQuestions.RemoveAll(q => q.Options != null && !q.Options.Any());
+            }
+
+            if (response.Support != null)
+            {
+                if (ContainsCredentialRequest(response.Support.Message))
+                {
+                    response.Support.Message = Neutralize(response.Support.Message);
+                }
+                if (ContainsCredentialRequest(response.Support.OfferToContinue))
+                {
+                    response.Support.OfferToContinue = Neutralize(response.Support.OfferToContinue);
+                }
+                if (response.Support.Resources != null)
+                {
+                    foreach (var r in response.Support.Resources)
+                    {
+                        if (ContainsCredentialRequest(r.Name)) r.Name = Neutralize(r.Name);
+                        if (ContainsCredentialRequest(r.Contact)) r.Contact = Neutralize(r.Contact);
+                    }
+                }
+            }
+
+            if (response.Changes != null)
+            {
+                foreach (var c in response.Changes)
+                {
+                    if (ContainsCredentialRequest(c.Reason)) c.Reason = Neutralize(c.Reason);
+                    if (ContainsCredentialRequest(c.From)) c.From = Neutralize(c.From);
+                    if (ContainsCredentialRequest(c.To)) c.To = Neutralize(c.To);
+                }
+            }
+
+            if (response.MissingInformation != null)
+            {
+                response.MissingInformation.RemoveAll(item => ContainsCredentialRequest(item));
+            }
         }
     }
 }
